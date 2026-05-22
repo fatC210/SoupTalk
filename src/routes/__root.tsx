@@ -72,14 +72,20 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Lovable App" },
-      { name: "description", content: "Lovable Generated Project" },
-      { name: "author", content: "Lovable" },
-      { property: "og:title", content: "Lovable App" },
-      { property: "og:description", content: "Lovable Generated Project" },
+      { title: "SoupTalk — Voice Lateral Thinking, by Midnight" },
+      {
+        name: "description",
+        content:
+          "An immersive AI voice game of lateral thinking. Speak, question, unravel — powered by ElevenLabs voice and your own LLM key.",
+      },
+      { name: "author", content: "SoupTalk" },
+      { property: "og:title", content: "SoupTalk — Voice Lateral Thinking" },
+      {
+        property: "og:description",
+        content: "Speak to a noir AI host. Solve impossible riddles through voice.",
+      },
       { property: "og:type", content: "website" },
-      { name: "twitter:card", content: "summary" },
-      { name: "twitter:site", content: "@Lovable" },
+      { name: "twitter:card", content: "summary_large_image" },
     ],
     links: [
       {

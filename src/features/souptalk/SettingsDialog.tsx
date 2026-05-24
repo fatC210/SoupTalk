@@ -1,4 +1,4 @@
-﻿import { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { AlertCircle, CheckCircle2, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -19,7 +19,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { validateElevenLabs, validateLlm } from "./llm";
-import { hasRequiredCredentials } from "./storage";
+import {
+  fingerprintElevenLabsCredentials,
+  fingerprintLlmCredentials,
+  hasVerifiedElevenLabsCredentials,
+  hasVerifiedLlmCredentials,
+} from "./storage";
 import type { Locale, UserCredentials } from "./types";
 import { translate } from "./i18n";
 
@@ -32,7 +37,6 @@ interface FieldState {
 
 interface SettingsDialogProps {
   open: boolean;
-  onboarding?: boolean;
   credentials: UserCredentials;
   onChange: (credentials: UserCredentials) => void;
   onOpenChange: (open: boolean) => void;
@@ -42,7 +46,6 @@ const initialFieldState: FieldState = { status: "idle" };
 
 export function SettingsDialog({
   open,
-  onboarding,
   credentials,
   onChange,
   onOpenChange,
@@ -54,10 +57,35 @@ export function SettingsDialog({
 
   useEffect(() => {
     setDraft(credentials);
+    setLlmState(
+      hasVerifiedLlmCredentials(credentials)
+        ? { status: "valid" }
+        : credentials.validation?.llm?.status === "invalid"
+          ? { status: "invalid", message: credentials.validation.llm.message }
+          : initialFieldState,
+    );
+    setElevenState(
+      hasVerifiedElevenLabsCredentials(credentials)
+        ? { status: "valid" }
+        : credentials.validation?.elevenLabs?.status === "invalid"
+          ? { status: "invalid", message: credentials.validation.elevenLabs.message }
+          : initialFieldState,
+    );
   }, [credentials, open]);
 
   function update<K extends keyof UserCredentials>(key: K, value: UserCredentials[K]) {
-    setDraft((current) => ({ ...current, [key]: value }));
+    setDraft((current) => {
+      const next = { ...current, [key]: value };
+      if (key === "llmBaseURL" || key === "llmApiKey" || key === "llmModel") {
+        setLlmState({ status: "idle" });
+        return { ...next, validation: { ...next.validation, llm: undefined } };
+      }
+      if (key === "elevenLabsApiKey") {
+        setElevenState({ status: "idle" });
+        return { ...next, validation: { ...next.validation, elevenLabs: undefined } };
+      }
+      return next;
+    });
   }
 
   async function runLlmValidation(nextDraft = draft) {
@@ -68,12 +96,33 @@ export function SettingsDialog({
     setLlmState({ status: "validating" });
     try {
       await validateLlm(nextDraft);
+      setDraft((current) => ({
+        ...current,
+        validation: {
+          ...current.validation,
+          llm: {
+            status: "valid",
+            fingerprint: fingerprintLlmCredentials(nextDraft),
+            checkedAt: Date.now(),
+          },
+        },
+      }));
       setLlmState({ status: "valid" });
     } catch (error) {
-      setLlmState({
-        status: "invalid",
-        message: error instanceof Error ? error.message : String(error),
-      });
+      const message = error instanceof Error ? error.message : String(error);
+      setDraft((current) => ({
+        ...current,
+        validation: {
+          ...current.validation,
+          llm: {
+            status: "invalid",
+            fingerprint: fingerprintLlmCredentials(nextDraft),
+            checkedAt: Date.now(),
+            message,
+          },
+        },
+      }));
+      setLlmState({ status: "invalid", message });
     }
   }
 
@@ -85,12 +134,33 @@ export function SettingsDialog({
     setElevenState({ status: "validating" });
     try {
       await validateElevenLabs(nextDraft.elevenLabsApiKey);
+      setDraft((current) => ({
+        ...current,
+        validation: {
+          ...current.validation,
+          elevenLabs: {
+            status: "valid",
+            fingerprint: fingerprintElevenLabsCredentials(nextDraft),
+            checkedAt: Date.now(),
+          },
+        },
+      }));
       setElevenState({ status: "valid" });
     } catch (error) {
-      setElevenState({
-        status: "invalid",
-        message: error instanceof Error ? error.message : String(error),
-      });
+      const message = error instanceof Error ? error.message : String(error);
+      setDraft((current) => ({
+        ...current,
+        validation: {
+          ...current.validation,
+          elevenLabs: {
+            status: "invalid",
+            fingerprint: fingerprintElevenLabsCredentials(nextDraft),
+            checkedAt: Date.now(),
+            message,
+          },
+        },
+      }));
+      setElevenState({ status: "invalid", message });
     }
   }
 
@@ -99,14 +169,11 @@ export function SettingsDialog({
     onOpenChange(false);
   }
 
-  const canClose = !onboarding || hasRequiredCredentials(draft);
+  const canSave = llmState.status !== "validating" && elevenState.status !== "validating";
 
   return (
-    <Dialog
-      open={open}
-      onOpenChange={(nextOpen) => (canClose || nextOpen ? onOpenChange(nextOpen) : undefined)}
-    >
-      <DialogContent className="max-w-2xl border-parchment/10 bg-[#14110f] text-parchment">
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="grid max-h-[calc(100dvh-2rem)] w-[calc(100vw-2rem)] max-w-2xl grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden border-parchment/10 bg-[#14110f] text-parchment">
         <DialogHeader>
           <DialogTitle className="font-serif text-3xl italic">
             {translate(locale, "welcomeTitle")}
@@ -115,7 +182,7 @@ export function SettingsDialog({
             {translate(locale, "welcomeDesc")}
           </DialogDescription>
         </DialogHeader>
-        <div className="grid gap-4 py-2">
+        <div className="grid min-h-0 gap-4 overflow-y-auto py-2 pr-1">
           <Field
             locale={locale}
             label={translate(locale, "llmBaseURL")}
@@ -168,19 +235,18 @@ export function SettingsDialog({
             </Select>
           </div>
         </div>
-        <DialogFooter>
-          {!onboarding && (
-            <Button
-              variant="ghost"
-              className="text-fog hover:text-ink"
-              onClick={() => onOpenChange(false)}
-            >
-              {translate(locale, "close")}
-            </Button>
-          )}
+        <DialogFooter className="border-t border-parchment/10 pt-4">
+          <Button
+            variant="ghost"
+            className="text-fog hover:text-ink"
+            onClick={() => onOpenChange(false)}
+          >
+            {translate(locale, "close")}
+          </Button>
           <Button
             className="bg-parchment text-ink hover:bg-blood hover:text-parchment"
             onClick={save}
+            disabled={!canSave}
           >
             {translate(locale, "save")}
           </Button>
@@ -234,7 +300,7 @@ function ValidationBadge({ locale, state }: { locale: "en" | "zh"; state: FieldS
     return (
       <span className="inline-flex items-center gap-1 text-xs text-ember">
         <Loader2 className="size-3 animate-spin" />
-        Validating
+        {translate(locale, "validating")}
       </span>
     );
   }
@@ -242,7 +308,7 @@ function ValidationBadge({ locale, state }: { locale: "en" | "zh"; state: FieldS
     return (
       <span className="inline-flex items-center gap-1 text-xs text-emerald-300">
         <CheckCircle2 className="size-3" />
-        Verified
+        {translate(locale, "verified")}
       </span>
     );
   }
@@ -250,7 +316,7 @@ function ValidationBadge({ locale, state }: { locale: "en" | "zh"; state: FieldS
     return (
       <span className="inline-flex items-center gap-1 text-xs text-red-300">
         <AlertCircle className="size-3" />
-        Failed
+        {translate(locale, "failed")}
       </span>
     );
   }

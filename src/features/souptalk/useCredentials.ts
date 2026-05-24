@@ -1,36 +1,19 @@
-﻿import { useCallback, useEffect, useMemo, useState } from "react";
-import { defaultCredentials } from "./constants";
-import { loadCredentials, saveCredentials } from "./storage";
-import type { Locale, UserCredentials } from "./types";
+import { useEffect, useMemo } from "react";
+import { useSoupTalkStore } from "./store";
 
 export function useCredentials() {
-  const [credentials, setCredentialsState] = useState<UserCredentials>(defaultCredentials);
-  const [loaded, setLoaded] = useState(false);
+  const credentials = useSoupTalkStore((state) => state.credentials);
+  const loaded = useSoupTalkStore((state) => state.loaded);
+  const hydrate = useSoupTalkStore((state) => state.hydrate);
+  const setCredentials = useSoupTalkStore((state) => state.setCredentials);
+  const updateCredentials = useSoupTalkStore((state) => state.updateCredentials);
+  const setLocale = useSoupTalkStore((state) => state.setLocale);
 
   useEffect(() => {
-    setCredentialsState(loadCredentials());
-    setLoaded(true);
-  }, []);
-
-  const setCredentials = useCallback((nextCredentials: UserCredentials) => {
-    setCredentialsState(nextCredentials);
-    saveCredentials(nextCredentials);
-  }, []);
-
-  const updateCredentials = useCallback((patch: Partial<UserCredentials>) => {
-    setCredentialsState((currentCredentials) => {
-      const nextCredentials = { ...currentCredentials, ...patch };
-      saveCredentials(nextCredentials);
-      return nextCredentials;
-    });
-  }, []);
+    if (!loaded) hydrate();
+  }, [hydrate, loaded]);
 
   const locale = credentials.locale;
-  const setLocale = useCallback(
-    (nextLocale: Locale) => updateCredentials({ locale: nextLocale }),
-    [updateCredentials],
-  );
-
   return useMemo(
     () => ({ credentials, loaded, locale, setCredentials, updateCredentials, setLocale }),
     [credentials, loaded, locale, setCredentials, updateCredentials, setLocale],

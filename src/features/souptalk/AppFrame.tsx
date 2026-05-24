@@ -18,9 +18,11 @@ export function AppFrame({ locale, onLocaleChange, onOpenSettings, children }: A
       <header className="sticky top-0 z-40 border-b border-parchment/10 bg-ink/80 px-4 py-3 backdrop-blur md:px-8">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-4">
           <Link to="/" className="flex items-center gap-3">
-            <span className="grid size-9 place-items-center rounded-full border border-blood/50 bg-blood/20">
-              🐢
-            </span>
+            <img
+              src="/souptalk-logo-mark.png"
+              alt="SoupTalk"
+              className="size-10 rounded-full border border-ember/40 bg-ink object-cover shadow-[0_0_24px_rgba(184,134,11,0.16)]"
+            />
             <div>
               <div className="font-serif text-2xl italic leading-none">SoupTalk</div>
               <div className="text-[10px] uppercase tracking-[0.28em] text-fog/60">

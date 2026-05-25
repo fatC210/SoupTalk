@@ -8,6 +8,7 @@ import type {
 
 const credentialsKey = "souptalk.credentials";
 const activeSessionKey = "souptalk.activeSession";
+const bgmPreferenceKey = "souptalk.bgmEnabled";
 const historyKey = "souptalk.history";
 const dbName = "souptalk";
 const historyStore = "history";
@@ -103,6 +104,20 @@ export function saveActiveSession(session: GameSession | null) {
   if (!canUseStorage()) return;
   if (session) writeJson(activeSessionKey, session);
   else window.localStorage.removeItem(activeSessionKey);
+}
+
+export function loadBgmPreference() {
+  if (!canUseStorage()) return false;
+  try {
+    return window.localStorage.getItem(bgmPreferenceKey) === "true";
+  } catch {
+    return false;
+  }
+}
+
+export function saveBgmPreference(enabled: boolean) {
+  if (!canUseStorage()) return;
+  window.localStorage.setItem(bgmPreferenceKey, String(enabled));
 }
 
 function openSoupTalkDb(): Promise<IDBDatabase> {

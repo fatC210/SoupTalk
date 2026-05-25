@@ -21,7 +21,9 @@ import { generatePuzzle, getHostPreset } from "@/features/souptalk/llm";
 import {
   createSession,
   hasRequiredLlmCredentials,
+  loadBgmPreference,
   saveActiveSession,
+  saveBgmPreference,
 } from "@/features/souptalk/storage";
 import type { Difficulty, SoupType } from "@/features/souptalk/types";
 import { useCredentials } from "@/features/souptalk/useCredentials";
@@ -85,6 +87,10 @@ function HomePage() {
         ];
 
   useEffect(() => {
+    setBgmEnabled(loadBgmPreference());
+  }, []);
+
+  useEffect(() => {
     if (missingLlmCredentials) return;
     setNotice((current) =>
       current === translate("en", "configureLlmFirst") ||
@@ -137,6 +143,7 @@ function HomePage() {
     if (usedFallback) {
       session.fallbackNotice = fallbackReason ?? translate(locale, "localFallback");
     }
+    saveBgmPreference(bgmEnabled);
     setActiveSession(session);
     saveActiveSession(session);
     await navigate({ to: "/play" });
@@ -241,7 +248,13 @@ function HomePage() {
 
             <div className="flex items-center justify-between rounded-lg border border-parchment/10 bg-parchment/5 p-3">
               <Label className="text-fog">{translate(locale, "bgm")}</Label>
-              <Switch checked={bgmEnabled} onCheckedChange={setBgmEnabled} />
+              <Switch
+                checked={bgmEnabled}
+                onCheckedChange={(checked) => {
+                  setBgmEnabled(checked);
+                  saveBgmPreference(checked);
+                }}
+              />
             </div>
 
             <Button

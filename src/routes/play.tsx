@@ -55,6 +55,8 @@ import type { AnswerType, GameResult, GameSession, Message } from "@/features/so
 import { useCredentials } from "@/features/souptalk/useCredentials";
 import type { ElevenLabsSpeechRecognizer } from "@/features/souptalk/speech";
 
+type BgmPlaybackSession = Pick<GameSession, "bgmVolume" | "locale" | "puzzle" | "soupTypes">;
+
 export const Route = createFileRoute("/play")({
   head: () => ({ meta: [{ title: "Play \u00b7 SoupTalk" }] }),
   component: PlayPage,
@@ -113,6 +115,11 @@ function PlayPage() {
   const activeSessionResult = storeSession?.result;
   const activeSessionOpeningSpoken = storeSession?.openingSpoken;
   const activeSessionPuzzle = storeSession?.puzzle;
+  const activeSessionBgmEnabled = storeSession?.bgmEnabled;
+  const activeSessionBgmVolume = storeSession?.bgmVolume;
+  const activeSessionHostId = storeSession?.hostId;
+  const activeSessionSoupTypes = storeSession?.soupTypes;
+  const currentBgmVolume = session?.bgmVolume;
   const progress = session
     ? Math.round((session.hitKeyPoints.length / session.keyPoints.length) * 100)
     : 0;
@@ -242,7 +249,8 @@ function PlayPage() {
   );
 
   const startBgm = useCallback(
-    (currentSession: GameSession) => {
+    (currentSession: BgmPlaybackSession) => {
+      if (bgmAudioRef.current || bgmAbortRef.current) return;
       stopBgm();
       const abortController = new AbortController();
       bgmAbortRef.current = abortController;
@@ -351,7 +359,7 @@ function PlayPage() {
         }
       }
     },
-    [credentials, setActiveSession, speak, stopBgm],
+    [credentials, setActiveSession, speak],
   );
 
   async function submitQuestion() {
@@ -544,9 +552,7 @@ function PlayPage() {
       speechRecognizerRef.current?.stop();
       speechRecognizerRef.current = null;
       setLiveTranscript("");
-      setVoiceStatus((currentStatus) =>
-        currentStatus === "speaking" ? currentStatus : "idle",
-      );
+      setVoiceStatus((currentStatus) => (currentStatus === "speaking" ? currentStatus : "idle"));
       return;
     }
     if (!canUseSpeechEngine) {
@@ -697,29 +703,52 @@ function PlayPage() {
         openingPlaybackSessionRef.current = null;
       }
     };
-  }, [
-    activeSessionId,
-    activeSessionOpeningSpoken,
-    activeSessionPuzzle,
-    speak,
-  ]);
+  }, [activeSessionId, activeSessionOpeningSpoken, activeSessionPuzzle, speak]);
 
   useEffect(() => {
-    if (!storeSession?.bgmEnabled || storeSession.result) {
+    if (!activeSessionBgmEnabled || activeSessionResult) {
       stopBgm();
       return;
     }
     if (!usingElevenLabsVoice || !hasVerifiedElevenLabsCredentials(credentials)) {
-      setNotice(translate(storeSession.locale, "configureElevenLabsFirst"));
+      setNotice(translate(activeSessionLocale ?? effectiveLocale, "configureElevenLabsFirst"));
       return;
     }
-    startBgm(storeSession);
+    if (
+      typeof activeSessionBgmVolume !== "number" ||
+      !activeSessionLocale ||
+      !activeSessionPuzzle ||
+      !activeSessionSoupTypes
+    ) {
+      return;
+    }
+    startBgm({
+      bgmVolume: activeSessionBgmVolume,
+      locale: activeSessionLocale,
+      puzzle: activeSessionPuzzle,
+      soupTypes: activeSessionSoupTypes,
+    });
     return stopBgm;
-  }, [credentials, startBgm, stopBgm, storeSession, usingElevenLabsVoice]);
+  }, [
+    activeSessionBgmEnabled,
+    activeSessionBgmVolume,
+    activeSessionHostId,
+    activeSessionId,
+    activeSessionLocale,
+    activeSessionPuzzle,
+    activeSessionResult,
+    activeSessionSoupTypes,
+    credentials,
+    startBgm,
+    stopBgm,
+    usingElevenLabsVoice,
+  ]);
 
   useEffect(() => {
-    if (bgmAudioRef.current && session) bgmAudioRef.current.volume = session.bgmVolume;
-  }, [session]);
+    if (bgmAudioRef.current && typeof currentBgmVolume === "number") {
+      bgmAudioRef.current.volume = currentBgmVolume;
+    }
+  }, [activeSessionBgmVolume, currentBgmVolume]);
 
   if (!session) {
     return (
@@ -949,43 +978,43 @@ function PlayPage() {
               <div className="rounded-lg border border-blood/30 bg-ink/45 px-4 py-3">
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                   <div className="flex min-w-0 items-center gap-3">
-                  <div
-                    className={`relative flex size-12 shrink-0 items-center justify-center rounded-full border ${
-                      voiceState.active
-                        ? "border-blood/60 bg-blood/20 shadow-[0_0_38px_rgba(142,26,26,0.35)]"
-                        : "border-parchment/15 bg-parchment/5"
-                    }`}
-                  >
-                    {voiceState.active && (
-                      <>
-                        <span className="absolute size-full animate-ping rounded-full bg-blood/20" />
-                        <span className="absolute size-8 animate-pulse rounded-full border border-blood/35" />
-                      </>
-                    )}
-                    {voiceStatus === "paused" || voiceStatus === "unavailable" ? (
-                      <MicOff className="relative size-5 text-fog" />
-                    ) : voiceStatus === "speaking" ? (
-                      <Volume2 className="relative size-5 text-ember" />
-                    ) : voiceStatus === "thinking" || voiceStatus === "connecting" ? (
-                      <Loader2 className="relative size-5 animate-spin text-ember" />
-                    ) : (
-                      <Mic className="relative size-5 text-parchment" />
-                    )}
-                  </div>
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2 text-xs uppercase text-fog/55">
-                      <AudioLines className="size-4 text-ember" />
-                      <span>{translate(effectiveLocale, "speechEngineActive")}</span>
+                    <div
+                      className={`relative flex size-12 shrink-0 items-center justify-center rounded-full border ${
+                        voiceState.active
+                          ? "border-blood/60 bg-blood/20 shadow-[0_0_38px_rgba(142,26,26,0.35)]"
+                          : "border-parchment/15 bg-parchment/5"
+                      }`}
+                    >
+                      {voiceState.active && (
+                        <>
+                          <span className="absolute size-full animate-ping rounded-full bg-blood/20" />
+                          <span className="absolute size-8 animate-pulse rounded-full border border-blood/35" />
+                        </>
+                      )}
+                      {voiceStatus === "paused" || voiceStatus === "unavailable" ? (
+                        <MicOff className="relative size-5 text-fog" />
+                      ) : voiceStatus === "speaking" ? (
+                        <Volume2 className="relative size-5 text-ember" />
+                      ) : voiceStatus === "thinking" || voiceStatus === "connecting" ? (
+                        <Loader2 className="relative size-5 animate-spin text-ember" />
+                      ) : (
+                        <Mic className="relative size-5 text-parchment" />
+                      )}
                     </div>
-                    <p className="line-clamp-2 text-sm leading-6 text-parchment">
-                      {liveTranscript || voiceState.description}
-                    </p>
-                    {pendingVoiceQuestionRef.current && (
-                      <p className="mt-1 text-sm text-ember">
-                        {translate(effectiveLocale, "voiceQueued")}
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2 text-xs uppercase text-fog/55">
+                        <AudioLines className="size-4 text-ember" />
+                        <span>{translate(effectiveLocale, "speechEngineActive")}</span>
+                      </div>
+                      <p className="line-clamp-2 text-sm leading-6 text-parchment">
+                        {liveTranscript || voiceState.description}
                       </p>
-                    )}
-                  </div>
+                      {pendingVoiceQuestionRef.current && (
+                        <p className="mt-1 text-sm text-ember">
+                          {translate(effectiveLocale, "voiceQueued")}
+                        </p>
+                      )}
+                    </div>
                   </div>
                   <div className="flex flex-wrap gap-2 lg:justify-end">
                     <Button

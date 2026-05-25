@@ -29,6 +29,30 @@ const hostAnswerSchema = z.object({
   keyPointHit: z.number().int().nullable(),
 });
 
+const terseHostSpeech: Record<Locale, Record<HostAnswer["answerType"], string>> = {
+  en: {
+    yes: "Yes.",
+    no: "No.",
+    irrelevant: "Irrelevant.",
+    yes_and_no: "Yes and No.",
+    clarify: "Please ask a clearer yes/no question.",
+    narrative: "",
+  },
+  zh: {
+    yes: "是。",
+    no: "否。",
+    irrelevant: "无关。",
+    yes_and_no: "是也不是。",
+    clarify: "请提出更清晰的是/否问题。",
+    narrative: "",
+  },
+};
+
+function normalizeHostSpeech(answerType: HostAnswer["answerType"], speech: string, locale: Locale) {
+  if (answerType === "clarify") return speech.trim() || terseHostSpeech[locale].clarify;
+  return terseHostSpeech[locale][answerType] || speech.trim();
+}
+
 const winEvaluationSchema = z.object({
   coveredKeyPoints: z.array(z.number().int()),
   missingCount: z.number().int().nonnegative(),
@@ -73,6 +97,10 @@ export function getLlmFallbackReason(error: unknown, locale: Locale) {
     locale === "zh"
       ? "LLM 生成失败，已使用内置汤面。原因："
       : "Using a bundled puzzle because LLM generation failed. Reason: ";
+  const modelSwitchSuggestion =
+    locale === "zh"
+      ? " 建议在设置中尝试更换一个更稳定、支持 JSON/结构化输出的模型。"
+      : " Try switching to a more stable model with JSON/structured-output support in Settings.";
 
   if (
     normalized.includes("api key") ||
@@ -80,13 +108,6 @@ export function getLlmFallbackReason(error: unknown, locale: Locale) {
     normalized.includes("401")
   ) {
     return `${prefix}${locale === "zh" ? "API Key 无效或未授权。" : "the API key is invalid or unauthorized."}`;
-  }
-  if (
-    normalized.includes("not found") ||
-    normalized.includes("model") ||
-    normalized.includes("404")
-  ) {
-    return `${prefix}${locale === "zh" ? "模型名称或 Base URL 不匹配。" : "the model name or Base URL does not match the provider."}`;
   }
   if (
     normalized.includes("timeout") ||
@@ -103,27 +124,56 @@ export function getLlmFallbackReason(error: unknown, locale: Locale) {
     normalized.includes("service unavailable") ||
     normalized.includes("503")
   ) {
-    return `${prefix}${locale === "zh" ? "模型服务过载或暂时不可用，请稍后重试。" : "the model service is overloaded or temporarily unavailable."}`;
+    return `${prefix}${
+      locale === "zh"
+        ? "模型服务过载或暂时不可用，请稍后重试。"
+        : "the model service is overloaded or temporarily unavailable."
+    }`;
+  }
+  if (
+    normalized.includes("not found") ||
+    normalized.includes("model name") ||
+    normalized.includes("model id") ||
+    normalized.includes("404")
+  ) {
+    return `${prefix}${
+      locale === "zh"
+        ? "模型名称或 Base URL 与服务商不匹配。"
+        : "the model name or Base URL does not match the provider."
+    }${modelSwitchSuggestion}`;
   }
   if (normalized.includes("returned no text")) {
-    return `${prefix}${locale === "zh" ? "模型返回了空内容。" : "the model returned no text."}`;
+    return `${prefix}${locale === "zh" ? "模型返回了空内容。" : "the model returned no text."}${modelSwitchSuggestion}`;
   }
   if (normalized.includes("no output generated")) {
-    return `${prefix}${locale === "zh" ? "模型没有生成可读取的文本内容。" : "the model generated no readable text output."}`;
+    return `${prefix}${
+      locale === "zh"
+        ? "模型没有生成可读取的文本内容。"
+        : "the model generated no readable text output."
+    }${modelSwitchSuggestion}`;
   }
   if (normalized.includes("finishreason=length") || normalized.includes("rawfinishreason=length")) {
-    return `${prefix}${locale === "zh" ? "模型输出被长度限制截断。" : "the model output was cut off by the length limit."}`;
+    return `${prefix}${
+      locale === "zh"
+        ? "模型输出被长度限制截断。"
+        : "the model output was cut off by the length limit."
+    }${modelSwitchSuggestion}`;
   }
-  if (normalized.includes("invalid json") || normalized.includes("no json object")) {
-    return `${prefix}${locale === "zh" ? "模型返回内容不是有效 JSON。" : "the model did not return valid JSON."}`;
-  }
-  if (normalized.includes("validation=")) {
-    return `${prefix}${locale === "zh" ? "模型返回 JSON 字段不符合出题格式。" : "the JSON fields did not match the required puzzle format."}`;
+  if (
+    normalized.includes("invalid json") ||
+    normalized.includes("no json object") ||
+    normalized.includes("complete json object") ||
+    normalized.includes("validation=")
+  ) {
+    return `${prefix}${
+      locale === "zh"
+        ? "模型返回内容不是有效 JSON 或字段不符合出题格式。"
+        : "the model did not return valid JSON or the fields did not match the required format."
+    }${modelSwitchSuggestion}`;
   }
 
   return `${prefix}${locale === "zh" ? "未知错误，请查看控制台详情。" : "unknown error; check the console for details."}`;
 }
-
 function previewText(text: string, maxLength = 240) {
   const compact = text.replace(/\s+/g, " ").trim();
   return compact.length > maxLength ? `${compact.slice(0, maxLength)}...` : compact;
@@ -176,6 +226,19 @@ function extractJsonObject(text: string) {
 const jsonSystemPrompt =
   'You are a strict JSON API. Return only the final JSON object. Do not think aloud, explain, translate the instructions, restate the task, or include markdown. The first character must be "{" and the last character must be "}".';
 
+function buildRepairJsonPrompt(text: string, schemaHint: string) {
+  return `Convert the following model response into exactly one compact valid JSON object that matches the schema.
+If the response contains analysis, markdown, a TypeScript-like shape, or extra prose, discard it.
+If a required value is missing, infer the smallest safe value from the response.
+
+${schemaHint}
+
+Model response:
+${text}
+
+Return only valid JSON. The first character must be "{" and the last character must be "}".`;
+}
+
 function buildJsonPrompt(prompt: string, schemaHint: string) {
   return `${prompt}
 
@@ -185,6 +248,18 @@ Return exactly one compact valid JSON object now. No prose. No reasoning. No mar
 
 function getPlainJsonTokenBudget(maxOutputTokens: number) {
   return Math.min(Math.max(maxOutputTokens * 3, 4000), 8000);
+}
+
+function parseAndValidateJson<TSchema extends z.ZodTypeAny>(
+  text: string,
+  schema: TSchema,
+): z.infer<TSchema> {
+  const parsed = extractJsonObject(text);
+  const validation = schema.safeParse(parsed);
+  if (!validation.success) {
+    throw new Error(validation.error.message);
+  }
+  return validation.data;
 }
 
 async function generateJson<TSchema extends z.ZodTypeAny>({
@@ -240,19 +315,44 @@ async function generateJson<TSchema extends z.ZodTypeAny>({
   }
 
   try {
-    const parsed = extractJsonObject(text);
-    const validation = schema.safeParse(parsed);
-    if (!validation.success) {
-      throw new Error(validation.error.message);
+    return parseAndValidateJson(text, schema);
+  } catch (firstError) {
+    const firstMessage = firstError instanceof Error ? firstError.message : String(firstError);
+
+    const repair = await generateText({
+      model,
+      temperature: 0,
+      maxOutputTokens: getPlainJsonTokenBudget(maxOutputTokens),
+      system: jsonSystemPrompt,
+      prompt: buildRepairJsonPrompt(text, schemaHint),
+    });
+    const repairedText = repair.text.trim();
+
+    if (!repairedText) {
+      throw new Error(
+        `${label} returned invalid JSON and repair returned no text. finishReason=${result.finishReason}; rawFinishReason=${String(
+          result.rawFinishReason,
+        )}; outputPreview=${previewText(text)}; validation=${firstMessage}; repairFinishReason=${
+          repair.finishReason
+        }; repairRawFinishReason=${String(repair.rawFinishReason)}`,
+      );
     }
-    return validation.data;
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    throw new Error(
-      `${label} returned invalid JSON. finishReason=${result.finishReason}; rawFinishReason=${String(
-        result.rawFinishReason,
-      )}; outputPreview=${previewText(text)}; validation=${message}`,
-    );
+
+    try {
+      return parseAndValidateJson(repairedText, schema);
+    } catch (repairError) {
+      const repairMessage =
+        repairError instanceof Error ? repairError.message : String(repairError);
+      throw new Error(
+        `${label} returned invalid JSON. finishReason=${result.finishReason}; rawFinishReason=${String(
+          result.rawFinishReason,
+        )}; outputPreview=${previewText(text)}; validation=${firstMessage}; repairFinishReason=${
+          repair.finishReason
+        }; repairRawFinishReason=${String(repair.rawFinishReason)}; repairPreview=${previewText(
+          repairedText,
+        )}; repairValidation=${repairMessage}`,
+      );
+    }
   }
 }
 
@@ -315,7 +415,7 @@ Critical rules:
       label: "Puzzle generation",
       schema: puzzleSchema,
       schemaHint:
-        'Required JSON shape: {"puzzle": string, "truth": string, "keyPoints": string[], "suggestedHost": string, "hostCharacter": string}',
+        'Required JSON example: {"puzzle":"A short strange situation for the player.","truth":"The hidden full explanation.","keyPoints":["A specific testable clue."],"suggestedHost":"Host name","hostCharacter":"Short host persona"}',
       temperature: 0.8,
       maxOutputTokens: 2400,
       prompt,
@@ -354,7 +454,7 @@ function localQuestionAnswer(question: string, keyPoints: string[], locale: Loca
   if (hitIndex >= 0) {
     return {
       answerType: "yes",
-      speech: locale === "zh" ? "是。你碰到了一个关键线索。" : "Yes. That touches a key clue.",
+      speech: normalizeHostSpeech("yes", "", locale),
       newClue: keyPoints[hitIndex],
       keyPointHit: hitIndex,
     };
@@ -362,16 +462,10 @@ function localQuestionAnswer(question: string, keyPoints: string[], locale: Loca
 
   const negativeWords = ["not", "never", "没有", "不是", "并非"];
   const hasNegative = negativeWords.some((word) => normalizedQuestion.includes(word));
+  const answerType = hasNegative ? "yes_and_no" : "irrelevant";
   return {
-    answerType: hasNegative ? "yes_and_no" : "irrelevant",
-    speech:
-      locale === "zh"
-        ? hasNegative
-          ? "是也不是。"
-          : "无关。"
-        : hasNegative
-          ? "Yes and No."
-          : "Irrelevant.",
+    answerType,
+    speech: normalizeHostSpeech(answerType, "", locale),
     newClue: null,
     keyPointHit: null,
   };
@@ -402,10 +496,11 @@ PLAYER QUESTION: ${question}
 
 Strict rules:
 1. Answer only with answerType yes, no, irrelevant, yes_and_no, or clarify.
-2. Never reveal the truth or key points directly in speech.
-3. If ambiguous, use clarify and politely request a clearer question.
-4. Determine whether this confirms a new clue and which key point index it hits.
-5. Respond in ${language}.`;
+2. For yes/no/irrelevant/yes_and_no, speech must be only the short answer label with no explanation.
+3. Never reveal the truth or key points directly in speech.
+4. If ambiguous, use clarify and politely request a clearer yes/no question.
+5. Determine whether this confirms a new clue and which key point index it hits.
+6. Respond in ${language}.`;
 
   try {
     const output = await generateJson({
@@ -413,14 +508,14 @@ Strict rules:
       label: "Host answer",
       schema: hostAnswerSchema,
       schemaHint:
-        'Required JSON shape: {"answerType": "yes" | "no" | "irrelevant" | "yes_and_no" | "clarify", "speech": string, "newClue": string | null, "keyPointHit": number | null}',
+        'Required JSON example: {"answerType":"yes","speech":"Yes.","newClue":"A newly confirmed clue or null","keyPointHit":0}',
       temperature: 0.2,
       maxOutputTokens: 300,
       prompt,
     });
     return {
       answerType: output.answerType,
-      speech: output.speech,
+      speech: normalizeHostSpeech(output.answerType, output.speech, session.locale),
       newClue: output.newClue ?? null,
       keyPointHit: typeof output.keyPointHit === "number" ? output.keyPointHit : null,
     };
@@ -461,7 +556,7 @@ Respond in ${language}.`;
       label: "Final answer evaluation",
       schema: winEvaluationSchema,
       schemaHint:
-        'Required JSON shape: {"coveredKeyPoints": number[], "missingCount": number, "isWin": boolean, "feedback": string}',
+        'Required JSON example: {"coveredKeyPoints":[0],"missingCount":1,"isWin":false,"feedback":"Brief feedback."}',
       temperature: 0,
       maxOutputTokens: 400,
       prompt,
@@ -501,9 +596,9 @@ export async function generateHint(
   const localHint =
     session.locale === "zh"
       ? [
-          `第 ${hintNumber} 次提示：先抓住汤面里最反常的一点：「${visibleFocus}」。试着问它是不是被某个人有意安排的。`,
-          `第 ${hintNumber} 次提示：有个关键背景还没被确认。可以把问题缩小到“这件事和某个人的身份、过去关系或动机有关吗”。`,
-          `第 ${hintNumber} 次提示：沿着「${visibleFocus}」继续问原因，不要只问它是否发生过。重点查“为什么这样做之后，情绪或结果发生了变化”。`,
+          `提示 ${hintNumber}：先抓住汤面里最反常的一点：“${visibleFocus}”。试着问它是不是被某个人有意安排的。`,
+          `提示 ${hintNumber}：有个关键背景还没被确认。可以把问题缩小到身份、过往关系或动机。`,
+          `提示 ${hintNumber}：沿着“${visibleFocus}”继续问原因，不要只问它是否发生过。重点查为什么这样做之后，情绪或结果发生了变化。`,
         ][Math.min(hintNumber, 3) - 1]
       : [
           `Hint ${hintNumber}: Start with the strangest visible detail: "${visibleFocus}". Try asking whether someone arranged it on purpose.`,
@@ -535,7 +630,7 @@ Rules:
       credentials,
       label: "Hint generation",
       schema: hintSchema,
-      schemaHint: 'Required JSON shape: {"hint": string}',
+      schemaHint: 'Required JSON example: {"hint":"One concise progressive hint."}',
       temperature: 0.4,
       maxOutputTokens: 220,
       prompt,
@@ -585,7 +680,7 @@ Rules:
       credentials,
       label: "Reasoning check",
       schema: reasoningCheckSchema,
-      schemaHint: 'Required JSON shape: {"feedback": string}',
+      schemaHint: 'Required JSON example: {"feedback":"Brief reasoning feedback."}',
       temperature: 0.3,
       maxOutputTokens: 260,
       prompt,
@@ -615,16 +710,10 @@ export function getHostPreset(host: string, locale: Locale, soupTypes: SoupType[
   return typeMatchedPreset ?? hostVoicePresets[locale === "zh" ? 4 : 0];
 }
 
-export function getOpeningLine(session: Pick<GameSession, "hostName" | "puzzle" | "locale">) {
-  return session.locale === "zh"
-    ? `主持人已准备好。请听汤面：\n\n${session.puzzle}`
-    : `The host is ready. Listen to the puzzle:\n\n${session.puzzle}`;
-}
-
 function pickVisibleFocus(puzzle: string, locale: Locale) {
   const parts = puzzle
     .split(locale === "zh" ? /[。！？；]/ : /[.!?;]/)
     .map((part) => part.trim())
     .filter(Boolean);
-  return parts.at(-1) ?? parts[0] ?? (locale === "zh" ? "那个反常结果" : "the odd outcome");
+  return parts.at(-1) ?? parts[0] ?? (locale === "zh" ? "那个异常结果" : "the odd outcome");
 }

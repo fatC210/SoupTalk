@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { AppFrame } from "@/features/souptalk/AppFrame";
 import { SettingsDialog } from "@/features/souptalk/SettingsDialog";
+import { soupTypeLabels } from "@/features/souptalk/constants";
 import { translate } from "@/features/souptalk/i18n";
 import {
   deleteHistorySession,
@@ -15,7 +16,7 @@ import {
 import type { GameSession } from "@/features/souptalk/types";
 import { useCredentials } from "@/features/souptalk/useCredentials";
 
-export const Route = createFileRoute("/history/$sessionId")({
+export const Route = createFileRoute("/history_/$sessionId")({
   head: () => ({ meta: [{ title: "Game Detail · SoupTalk" }] }),
   component: HistoryDetailPage,
 });
@@ -42,7 +43,7 @@ function HistoryDetailPage() {
     };
   }, [sessionId]);
 
-  const effectiveLocale = session?.locale ?? locale;
+  const effectiveLocale = locale;
 
   async function deleteCurrentSession() {
     if (!session) return;
@@ -129,7 +130,9 @@ function HistoryDetailPage() {
                   />
                   <MetaItem
                     label={translate(effectiveLocale, "soupTypes")}
-                    value={session.soupTypes.join(", ")}
+                    value={session.soupTypes
+                      .map((soupType) => soupTypeLabels[soupType]?.[effectiveLocale] ?? soupType)
+                      .join(", ")}
                   />
                   <MetaItem
                     label={translate(effectiveLocale, "hintsLeft")}
@@ -196,13 +199,13 @@ function HistoryDetailPage() {
                 {session.messages.map((message, index) => (
                   <div
                     key={`${message.timestamp}-${index}`}
-                    className={`rounded-xl p-3 text-sm ${
+                    className={`w-fit max-w-[80%] rounded-xl p-3 text-sm ${
                       message.role === "user"
-                        ? "ml-auto max-w-[80%] bg-parchment text-ink"
-                        : "mr-auto max-w-[80%] bg-parchment/8 text-fog"
+                        ? "ml-auto bg-parchment text-ink"
+                        : "mr-auto bg-parchment/8 text-fog"
                     }`}
                   >
-                    <p className="whitespace-pre-line leading-6">{message.content}</p>
+                    <p className="whitespace-pre-line break-words leading-6">{message.content}</p>
                   </div>
                 ))}
               </CardContent>

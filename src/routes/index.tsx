@@ -17,7 +17,7 @@ import { AppFrame } from "@/features/souptalk/AppFrame";
 import { SettingsDialog } from "@/features/souptalk/SettingsDialog";
 import { soupTypeLabels } from "@/features/souptalk/constants";
 import { translate } from "@/features/souptalk/i18n";
-import { generatePuzzle, getHostPreset, getOpeningLine } from "@/features/souptalk/llm";
+import { generatePuzzle, getHostPreset } from "@/features/souptalk/llm";
 import {
   createSession,
   hasRequiredLlmCredentials,
@@ -73,7 +73,7 @@ function HomePage() {
           ["你问", "蛋糕是给一个已经不在她身边的人的吗？"],
           ["主持人", "是。"],
           ["你问", "长椅和那个人失踪有关吗？"],
-          ["主持人", "是。你碰到了一个关键线索。"],
+          ["主持人", "是。"],
         ]
       : [
           ["You ask", "Was the cake for Lina herself?"],
@@ -81,7 +81,7 @@ function HomePage() {
           ["You ask", "Was it for someone who is no longer with her?"],
           ["Host", "Yes."],
           ["You ask", "Is the bench connected to that person's disappearance?"],
-          ["Host", "Yes. That touches a key clue."],
+          ["Host", "Yes."],
         ];
 
   useEffect(() => {
@@ -129,7 +129,7 @@ function HomePage() {
     session.messages = [
       {
         role: "host",
-        content: getOpeningLine(session),
+        content: session.puzzle,
         answerType: "narrative",
         timestamp: Date.now(),
       },

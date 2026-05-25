@@ -247,14 +247,20 @@ function normalizeGameSession(session: GameSession): GameSession {
     hostVoicePresets.find((preset) => preset.voiceId === session.hostVoiceId) ??
     hostVoicePresets[4];
   const locale = session.locale ?? defaultCredentials.locale;
+  const messages = session.messages.map((message, index) =>
+    index === 0 && message.role === "host" && message.answerType === "narrative"
+      ? { ...message, content: session.puzzle }
+      : message,
+  );
   return {
     ...session,
+    messages,
     hostId: session.hostId ?? host.id,
     hostName: session.hostName ?? host.name,
     hostVoiceId: session.hostVoiceId ?? host.voiceId,
     hostCharacter: session.hostCharacter ?? host.characterDescription[locale],
     bgmVolume: session.bgmVolume ?? 0.35,
-    openingSpoken: session.openingSpoken ?? session.messages.length > 0,
+    openingSpoken: session.openingSpoken ?? messages.length > 0,
   };
 }
 

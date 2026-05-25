@@ -142,18 +142,45 @@ export function getVoiceCapability(credentials: UserCredentials): VoiceCapabilit
   return "none";
 }
 
+export function normalizeSpeechText(text: string, locale: Locale) {
+  if (locale !== "zh") return text;
+  const normalized = text.trim();
+  const shortHostReplies: Record<string, string> = {
+    是: "是的。",
+    "是。": "是的。",
+    "是！": "是的。",
+    "是?": "是的。",
+    "是？": "是的。",
+    否: "否。",
+    "否。": "否。",
+    "否！": "否。",
+    "否?": "否。",
+    "否？": "否。",
+    无关: "无关。",
+    "无关。": "无关。",
+    是也不是: "是，也不是。",
+    "是也不是。": "是，也不是。",
+  };
+  return shortHostReplies[normalized] ?? text;
+}
+
 export async function speakWithElevenLabs({
   apiKey,
   text,
   voiceId,
+  locale,
   signal,
+  onPlayStart,
 }: {
   apiKey: string;
   text: string;
   voiceId: string;
+  locale: Locale;
   signal?: AbortSignal;
+  onPlayStart?: () => void;
 }) {
   if (!apiKey.trim()) throw new Error("Missing ElevenLabs API key.");
+  const speechText = normalizeSpeechText(text, locale);
   const response = await fetch(
     `${elevenLabsApiBaseUrl}/text-to-speech/${encodeURIComponent(voiceId)}/stream?output_format=mp3_44100_128`,
     {
@@ -163,8 +190,9 @@ export async function speakWithElevenLabs({
         "xi-api-key": apiKey,
       },
       body: JSON.stringify({
-        text,
+        text: speechText,
         model_id: defaultTtsModel,
+        ...(locale === "zh" ? { language_code: "zh" } : {}),
         voice_settings: {
           stability: 0.52,
           similarity_boost: 0.75,
@@ -182,8 +210,11 @@ export async function speakWithElevenLabs({
   const audio = await response.blob();
   const objectUrl = URL.createObjectURL(audio);
   const player = new Audio(objectUrl);
-  await playAudio(player);
-  URL.revokeObjectURL(objectUrl);
+  try {
+    await playAudio(player, onPlayStart, signal);
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
 }
 
 export async function generateBgmWithElevenLabs({
@@ -354,10 +385,40 @@ async function readErrorMessage(response: Response) {
   }
 }
 
-function playAudio(player: HTMLAudioElement) {
+function playAudio(player: HTMLAudioElement, onPlayStart?: () => void, signal?: AbortSignal) {
   return new Promise<void>((resolve, reject) => {
-    player.onended = () => resolve();
-    player.onerror = () => reject(new Error("Failed to play ElevenLabs audio."));
-    void player.play().catch(reject);
+    const cleanup = () => {
+      signal?.removeEventListener("abort", handleAbort);
+      player.onended = null;
+      player.onerror = null;
+    };
+    const handleAbort = () => {
+      player.pause();
+      player.src = "";
+      cleanup();
+      reject(new DOMException("Audio playback aborted.", "AbortError"));
+    };
+    if (signal?.aborted) {
+      handleAbort();
+      return;
+    }
+    signal?.addEventListener("abort", handleAbort, { once: true });
+    player.onended = () => {
+      cleanup();
+      resolve();
+    };
+    player.onerror = () => {
+      cleanup();
+      reject(new Error("Failed to play ElevenLabs audio."));
+    };
+    void player
+      .play()
+      .then(() => {
+        if (!signal?.aborted) onPlayStart?.();
+      })
+      .catch((error) => {
+        cleanup();
+        reject(error);
+      });
   });
 }

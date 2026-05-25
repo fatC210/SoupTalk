@@ -14,7 +14,7 @@ import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as PlayRouteImport } from './routes/play'
 import { Route as HistoryRouteImport } from './routes/history'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as HistorySessionIdRouteImport } from './routes/history.$sessionId'
+import { Route as HistorySessionIdRouteImport } from './routes/history_.$sessionId'
 
 const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
   id: '/sitemap.xml',
@@ -42,14 +42,14 @@ const IndexRoute = IndexRouteImport.update({
   getParentRoute: () => rootRouteImport,
 } as any)
 const HistorySessionIdRoute = HistorySessionIdRouteImport.update({
-  id: '/$sessionId',
-  path: '/$sessionId',
-  getParentRoute: () => HistoryRoute,
+  id: '/history_/$sessionId',
+  path: '/history/$sessionId',
+  getParentRoute: () => rootRouteImport,
 } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
-  '/history': typeof HistoryRouteWithChildren
+  '/history': typeof HistoryRoute
   '/play': typeof PlayRoute
   '/settings': typeof SettingsRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
@@ -57,7 +57,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
-  '/history': typeof HistoryRouteWithChildren
+  '/history': typeof HistoryRoute
   '/play': typeof PlayRoute
   '/settings': typeof SettingsRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
@@ -66,11 +66,11 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
-  '/history': typeof HistoryRouteWithChildren
+  '/history': typeof HistoryRoute
   '/play': typeof PlayRoute
   '/settings': typeof SettingsRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
-  '/history/$sessionId': typeof HistorySessionIdRoute
+  '/history_/$sessionId': typeof HistorySessionIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -96,15 +96,16 @@ export interface FileRouteTypes {
     | '/play'
     | '/settings'
     | '/sitemap.xml'
-    | '/history/$sessionId'
+    | '/history_/$sessionId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
-  HistoryRoute: typeof HistoryRouteWithChildren
+  HistoryRoute: typeof HistoryRoute
   PlayRoute: typeof PlayRoute
   SettingsRoute: typeof SettingsRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
+  HistorySessionIdRoute: typeof HistorySessionIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -144,33 +145,23 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/history/$sessionId': {
-      id: '/history/$sessionId'
-      path: '/$sessionId'
+    '/history_/$sessionId': {
+      id: '/history_/$sessionId'
+      path: '/history/$sessionId'
       fullPath: '/history/$sessionId'
       preLoaderRoute: typeof HistorySessionIdRouteImport
-      parentRoute: typeof HistoryRoute
+      parentRoute: typeof rootRouteImport
     }
   }
 }
 
-interface HistoryRouteChildren {
-  HistorySessionIdRoute: typeof HistorySessionIdRoute
-}
-
-const HistoryRouteChildren: HistoryRouteChildren = {
-  HistorySessionIdRoute: HistorySessionIdRoute,
-}
-
-const HistoryRouteWithChildren =
-  HistoryRoute._addFileChildren(HistoryRouteChildren)
-
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
-  HistoryRoute: HistoryRouteWithChildren,
+  HistoryRoute: HistoryRoute,
   PlayRoute: PlayRoute,
   SettingsRoute: SettingsRoute,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
+  HistorySessionIdRoute: HistorySessionIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

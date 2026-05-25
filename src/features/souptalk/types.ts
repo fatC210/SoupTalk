@@ -78,6 +78,7 @@ export interface HostAnswer {
 export interface WinEvaluation {
   coveredKeyPoints: number[];
   missingCount: number;
+  hitRate: number;
   isWin: boolean;
   feedback: string;
 }

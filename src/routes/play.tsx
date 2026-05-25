@@ -57,6 +57,13 @@ import type { ElevenLabsSpeechRecognizer } from "@/features/souptalk/speech";
 
 type BgmPlaybackSession = Pick<GameSession, "bgmVolume" | "locale" | "puzzle" | "soupTypes">;
 
+interface FinalAnswerResult {
+  hitRate: number;
+  isWin: boolean;
+  truth: string;
+  feedback: string;
+}
+
 export const Route = createFileRoute("/play")({
   head: () => ({ meta: [{ title: "Play \u00b7 SoupTalk" }] }),
   component: PlayPage,
@@ -82,6 +89,7 @@ function PlayPage() {
   const [input, setInput] = useState("");
   const [finalAnswer, setFinalAnswer] = useState("");
   const [finalAnswerOpen, setFinalAnswerOpen] = useState(false);
+  const [finalAnswerResult, setFinalAnswerResult] = useState<FinalAnswerResult | null>(null);
   const [busy, setBusy] = useState(false);
   const [hintBusy, setHintBusy] = useState(false);
   const [reasoningBusy, setReasoningBusy] = useState(false);
@@ -388,6 +396,7 @@ function PlayPage() {
     busyRef.current = true;
     setVoiceStatus("thinking");
     setNotice(null);
+    setFinalAnswerResult(null);
     const userMessage: Message = {
       role: "user",
       content,
@@ -424,8 +433,13 @@ function PlayPage() {
         messages: [...sessionWithUserMessage.messages, hostMessage],
         ...(evaluation.isWin ? { result: "win", endTime: Date.now() } : {}),
       };
+      setFinalAnswerResult({
+        hitRate: evaluation.hitRate,
+        isWin: evaluation.isWin,
+        truth: sessionWithUserMessage.truth,
+        feedback: evaluation.feedback,
+      });
       if (evaluation.isWin) {
-        setFinalAnswerOpen(false);
         setFinishedSession(nextSession);
         setActiveSession(null);
         void saveToHistory(nextSession);
@@ -1092,45 +1106,95 @@ function PlayPage() {
         onChange={setCredentials}
         onOpenChange={setSettingsOpen}
       />
-      <Dialog open={finalAnswerOpen} onOpenChange={setFinalAnswerOpen}>
+      <Dialog
+        open={finalAnswerOpen}
+        onOpenChange={(open) => {
+          setFinalAnswerOpen(open);
+          if (!open) setFinalAnswerResult(null);
+        }}
+      >
         <DialogContent className="border-parchment/10 bg-[#14110f] text-parchment">
           <DialogHeader>
             <DialogTitle className="font-serif text-2xl italic">
-              {translate(effectiveLocale, "finalAnswerTitle")}
+              {finalAnswerResult
+                ? translate(
+                    effectiveLocale,
+                    finalAnswerResult.isWin ? "finalAnswerCorrect" : "finalAnswerIncorrect",
+                  )
+                : translate(effectiveLocale, "finalAnswerTitle")}
             </DialogTitle>
-            <DialogDescription className="text-fog/65">
-              {translate(effectiveLocale, "finalAnswerDesc")}
-            </DialogDescription>
+            {!finalAnswerResult && (
+              <DialogDescription className="text-fog/65">
+                {translate(effectiveLocale, "finalAnswerDesc")}
+              </DialogDescription>
+            )}
           </DialogHeader>
-          <Textarea
-            value={finalAnswer}
-            onChange={(event) => setFinalAnswer(event.target.value)}
-            placeholder={translate(effectiveLocale, "finalAnswerPlaceholder")}
-            className="min-h-36 border-parchment/15 bg-ink/50 text-parchment"
-            disabled={busy}
-          />
-          <p className="text-sm text-fog/60">
-            {translate(effectiveLocale, "finalAnswerVoiceHint")}
-          </p>
+          {finalAnswerResult ? (
+            <div className="space-y-4">
+              <div className="rounded-lg border border-parchment/10 bg-parchment/5 p-4">
+                <div className="text-xs uppercase tracking-[0.18em] text-ember">
+                  {translate(effectiveLocale, "finalAnswerHitRate")}
+                </div>
+                <div className="mt-2 text-3xl font-semibold text-parchment">
+                  {finalAnswerResult.hitRate}%
+                </div>
+              </div>
+              <div>
+                <div className="mb-2 text-xs uppercase tracking-[0.18em] text-ember">
+                  {translate(effectiveLocale, "correctAnswer")}
+                </div>
+                <p className="max-h-52 overflow-y-auto whitespace-pre-line rounded-lg border border-parchment/10 bg-ink/50 p-4 text-sm leading-6 text-fog">
+                  {finalAnswerResult.truth}
+                </p>
+              </div>
+              <p className="whitespace-pre-line text-sm leading-6 text-fog/70">
+                {finalAnswerResult.feedback}
+              </p>
+            </div>
+          ) : (
+            <>
+              <Textarea
+                value={finalAnswer}
+                onChange={(event) => setFinalAnswer(event.target.value)}
+                placeholder={translate(effectiveLocale, "finalAnswerPlaceholder")}
+                className="min-h-36 border-parchment/15 bg-ink/50 text-parchment"
+                disabled={busy}
+              />
+              <p className="text-sm text-fog/60">
+                {translate(effectiveLocale, "finalAnswerVoiceHint")}
+              </p>
+            </>
+          )}
           <DialogFooter>
             <Button
               type="button"
               variant="outline"
               className="border-parchment/20 bg-transparent text-parchment hover:bg-parchment hover:text-ink"
-              onClick={() => setFinalAnswerOpen(false)}
+              onClick={() => {
+                if (finalAnswerResult && !finalAnswerResult.isWin) {
+                  setFinalAnswerResult(null);
+                  return;
+                }
+                setFinalAnswerOpen(false);
+              }}
               disabled={busy}
             >
-              {translate(effectiveLocale, "cancel")}
+              {translate(
+                effectiveLocale,
+                finalAnswerResult?.isWin ? "finish" : finalAnswerResult ? "retryFinalAnswer" : "cancel",
+              )}
             </Button>
-            <Button
-              type="button"
-              className="bg-parchment text-ink hover:bg-blood hover:text-parchment"
-              onClick={submitFinalAnswer}
-              disabled={busy}
-            >
-              {busy && <Loader2 className="mr-2 size-4 animate-spin" />}
-              {translate(effectiveLocale, "submitAnswer")}
-            </Button>
+            {!finalAnswerResult && (
+              <Button
+                type="button"
+                className="bg-parchment text-ink hover:bg-blood hover:text-parchment"
+                onClick={submitFinalAnswer}
+                disabled={busy}
+              >
+                {busy && <Loader2 className="mr-2 size-4 animate-spin" />}
+                {translate(effectiveLocale, "submitAnswer")}
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>

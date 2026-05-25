@@ -1,7 +1,8 @@
 import tailwindcss from "@tailwindcss/vite";
-import { nitro } from "nitro/vite";
 import { tanstackStart } from "@tanstack/react-start/plugin/vite";
 import react from "@vitejs/plugin-react";
+import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { defineConfig, loadEnv, mergeConfig, type UserConfig } from "vite";
 import tsconfigPaths from "vite-tsconfig-paths";
 
@@ -36,7 +37,17 @@ function withWatchDebounce(config: UserConfig): UserConfig {
   });
 }
 
-export default defineConfig(({ command, mode }) => {
+async function loadNitroPlugin(command: string) {
+  if (command !== "build") {
+    return null;
+  }
+
+  const nitroVitePath = pathToFileURL(resolve(process.cwd(), "node_modules/nitro/dist/vite.mjs")).href;
+  const { nitro } = await import(nitroVitePath);
+  return nitro();
+}
+
+export default defineConfig(async ({ command, mode }) => {
   const config: UserConfig = {
     define: viteEnvDefines(mode),
     resolve: {
@@ -69,7 +80,7 @@ export default defineConfig(({ command, mode }) => {
         },
         server: { entry: "server" },
       }),
-      command === "build" ? nitro() : null,
+      await loadNitroPlugin(command),
       react(),
     ],
   };

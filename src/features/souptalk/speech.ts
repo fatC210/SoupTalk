@@ -126,7 +126,7 @@ export async function startSpeechEngineSession({
       llmModel: credentials.llmModel,
     },
     onMessage,
-    onModeChange,
+    onModeChange: onModeChange ? ({ mode }) => onModeChange(mode) : undefined,
     onInterruption,
     onError,
   });
@@ -258,8 +258,11 @@ export async function generateBgmWithElevenLabs({
   };
 }
 
-export function playAnswerCue(answerType: "yes" | "no" | "irrelevant" | "yes_and_no" | "clarify") {
+export function playAnswerCue(
+  answerType: "yes" | "no" | "irrelevant" | "yes_and_no" | "clarify" | "narrative",
+) {
   if (typeof window === "undefined") return;
+  if (answerType === "narrative") return;
   const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
   if (!AudioContextCtor) return;
   const audioContext = new AudioContextCtor();

@@ -56,7 +56,7 @@ function normalizeHostSpeech(answerType: HostAnswer["answerType"], speech: strin
 const winEvaluationSchema = z.object({
   coveredKeyPoints: z.array(z.number().int()),
   missingCount: z.number().int().nonnegative(),
-  isWin: z.boolean(),
+  hitRate: z.number().min(0).max(100),
   feedback: z.string().min(1),
 });
 
@@ -531,6 +531,29 @@ export async function evaluateFinalAnswer(
   playerAnswer: string,
   locale: Locale,
 ): Promise<WinEvaluation> {
+  const requiredHitRate = 90;
+  const buildEvaluation = (
+    coveredKeyPoints: number[],
+    hitRate: number,
+    fallbackFeedback: string,
+  ): WinEvaluation => {
+    const normalizedCovered = Array.from(
+      new Set(
+        coveredKeyPoints.filter(
+          (index) => Number.isInteger(index) && index >= 0 && index < keyPoints.length,
+        ),
+      ),
+    ).sort((a, b) => a - b);
+    const normalizedHitRate = Math.round(Math.min(Math.max(hitRate, 0), 100));
+
+    return {
+      coveredKeyPoints: normalizedCovered,
+      missingCount: Math.max(keyPoints.length - normalizedCovered.length, 0),
+      hitRate: normalizedHitRate,
+      isWin: normalizedHitRate >= requiredHitRate,
+      feedback: fallbackFeedback,
+    };
+  };
   const localCovered = keyPoints
     .map((point, index) => ({ point, index }))
     .filter(({ point }) =>
@@ -544,10 +567,12 @@ export async function evaluateFinalAnswer(
     .map(({ index }) => index);
 
   const language = locale === "zh" ? "Simplified Chinese" : "English";
-  const prompt = `Evaluate whether the player's final answer covers ALL key points.
+  const prompt = `Evaluate how many key points the player's final answer covers.
 KEY POINTS with indexes: ${JSON.stringify(keyPoints)}
 PLAYER ANSWER: ${playerAnswer}
 For each key point, decide if the player's answer semantically covers it.
+Set hitRate from 0 to 100 for the overall semantic match to the full truth. A near-complete answer with minor wording differences can be around 90.
+The player is correct if hitRate is at least ${requiredHitRate}%.
 Respond in ${language}.`;
 
   try {
@@ -556,23 +581,21 @@ Respond in ${language}.`;
       label: "Final answer evaluation",
       schema: winEvaluationSchema,
       schemaHint:
-        'Required JSON example: {"coveredKeyPoints":[0],"missingCount":1,"isWin":false,"feedback":"Brief feedback."}',
+        'Required JSON example: {"coveredKeyPoints":[0],"missingCount":1,"hitRate":50,"feedback":"Brief feedback."}',
       temperature: 0,
       maxOutputTokens: 400,
       prompt,
     });
-    return output;
+    return buildEvaluation(output.coveredKeyPoints, output.hitRate, output.feedback);
   } catch (error) {
     console.warn("Evaluation failed; using local heuristic.", error);
-    return {
-      coveredKeyPoints: localCovered,
-      missingCount: keyPoints.length - localCovered.length,
-      isWin: localCovered.length === keyPoints.length,
-      feedback:
-        locale === "zh"
-          ? "我会按已覆盖的关键点来判断。"
-          : "I will judge by the key points you covered.",
-    };
+    return buildEvaluation(
+      localCovered,
+      keyPoints.length > 0 ? (localCovered.length / keyPoints.length) * 100 : 0,
+      locale === "zh"
+        ? "我会按已覆盖的关键点来判断。"
+        : "I will judge by the key points you covered.",
+    );
   }
 }
 
